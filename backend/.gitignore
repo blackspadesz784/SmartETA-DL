@@ -1,0 +1,17 @@
+# Training data - bahut bada hai, sirf local training ke liye chahiye
+train.csv
+
+# Compiled python bytecode files
+__pycache__/
+*.pyc
+*.pyo
+
+# Python virtual environment
+venv/
+env/
+.venv/
+
+# OS/editor junk
+.DS_Store
+.vscode/
+.idea/

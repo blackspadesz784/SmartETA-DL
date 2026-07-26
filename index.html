@@ -1,0 +1,372 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Delivery Time Predictor — Deep Learning</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;700&family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;600&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --bg: #0e1013;
+    --bg-panel: #16191e;
+    --bg-panel-2: #1c2027;
+    --line: #2a2f38;
+    --text: #eef0f2;
+    --muted: #8b93a1;
+    --violet: #8a6bff;
+    --violet-dim: #453472;
+    --teal: #2ee6a6;
+    --red: #ff5c5c;
+    --radius: 10px;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    background: var(--bg);
+    background-image:
+      radial-gradient(circle at 15% 0%, rgba(138,107,255,0.10), transparent 40%),
+      radial-gradient(circle at 85% 20%, rgba(46,230,166,0.06), transparent 35%);
+    color: var(--text);
+    font-family: 'Inter', sans-serif;
+    min-height: 100vh;
+  }
+  .mono { font-family: 'JetBrains Mono', monospace; }
+  header {
+    border-bottom: 1px solid var(--line);
+    padding: 28px 40px 24px;
+    display: flex; align-items: center; justify-content: space-between;
+    flex-wrap: wrap; gap: 16px;
+  }
+  .brand { display: flex; align-items: center; gap: 14px; }
+  .brand-mark {
+    width: 42px; height: 42px; border-radius: 10px;
+    background: linear-gradient(135deg, var(--violet), #b9a6ff);
+    display: flex; align-items: center; justify-content: center;
+    font-family: 'Space Grotesk', sans-serif; font-weight: 700; font-size: 18px; color: #14151a;
+  }
+  h1 { font-family: 'Space Grotesk', sans-serif; font-size: 22px; margin: 0; letter-spacing: -0.01em; }
+  .brand p { margin: 2px 0 0; color: var(--muted); font-size: 13px; }
+  #status-badge {
+    font-family: 'JetBrains Mono', monospace; font-size: 12px; padding: 7px 14px;
+    border-radius: 100px; border: 1px solid var(--line); background: var(--bg-panel);
+    color: var(--muted); display: flex; align-items: center; gap: 8px;
+  }
+  .dot { width: 7px; height: 7px; border-radius: 50%; background: var(--muted); }
+  .dot.ready { background: var(--teal); box-shadow: 0 0 8px var(--teal); }
+  .dot.loading { background: var(--violet); animation: pulse 1.1s infinite; }
+  @keyframes pulse { 0%,100% { opacity: 1; } 50% { opacity: 0.35; } }
+  nav { display: flex; gap: 4px; padding: 0 40px; border-bottom: 1px solid var(--line); overflow-x: auto; }
+  nav button {
+    background: none; border: none; color: var(--muted); font-family: 'Inter', sans-serif;
+    font-size: 14px; font-weight: 500; padding: 16px 18px; cursor: pointer;
+    border-bottom: 2px solid transparent; white-space: nowrap;
+  }
+  nav button:hover { color: var(--text); }
+  nav button.active { color: var(--violet); border-bottom-color: var(--violet); }
+  main { max-width: 1280px; margin: 0 auto; padding: 36px 40px 80px; }
+  .view { display: none; }
+  .view.active { display: block; animation: fadein 0.25s ease; }
+  @keyframes fadein { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: translateY(0); } }
+  .section-title { font-family: 'Space Grotesk', sans-serif; font-size: 18px; margin: 0 0 4px; }
+  .section-sub { color: var(--muted); font-size: 13px; margin: 0 0 22px; }
+  .loading-msg { color: var(--muted); font-family: 'JetBrains Mono', monospace; font-size: 13px; padding: 60px 0; text-align: center; }
+  .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(420px, 1fr)); gap: 20px; margin-bottom: 40px; }
+  .card { background: var(--bg-panel); border: 1px solid var(--line); border-radius: var(--radius); padding: 18px; }
+  .card h3 {
+    font-family: 'Space Grotesk', sans-serif; font-size: 14px; margin: 0 0 12px; color: var(--text);
+    display: flex; align-items: center; gap: 8px;
+  }
+  .card h3::before { content: ''; width: 6px; height: 6px; border-radius: 50%; background: var(--violet); }
+  .card img { width: 100%; border-radius: 6px; display: block; background: #fff; }
+  .metrics-row { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 14px; margin-bottom: 28px; }
+  .metric-card { background: var(--bg-panel); border: 1px solid var(--line); border-radius: var(--radius); padding: 16px 18px; }
+  .metric-card .name { font-size: 12px; color: var(--muted); margin-bottom: 8px; text-transform: uppercase; letter-spacing: 0.04em; }
+  .metric-card .val { font-family: 'JetBrains Mono', monospace; font-size: 24px; font-weight: 600; color: var(--text); }
+  .arch-diagram { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; padding: 10px 0; }
+  .layer-box {
+    background: var(--bg-panel-2); border: 1px solid var(--violet-dim); border-radius: 8px;
+    padding: 12px 16px; text-align: center; min-width: 90px;
+  }
+  .layer-box .n { font-family: 'JetBrains Mono', monospace; font-size: 18px; color: var(--violet); }
+  .layer-box .l { font-size: 11px; color: var(--muted); margin-top: 4px; }
+  .arch-arrow { color: var(--muted); font-size: 18px; }
+  form.predict-form {
+    display: grid; grid-template-columns: repeat(auto-fit, minmax(230px, 1fr)); gap: 16px;
+    background: var(--bg-panel); border: 1px solid var(--line); border-radius: var(--radius); padding: 24px;
+  }
+  .field { display: flex; flex-direction: column; gap: 6px; }
+  .field label { font-size: 12px; color: var(--muted); }
+  .field input, .field select {
+    background: var(--bg-panel-2); border: 1px solid var(--line); color: var(--text);
+    padding: 10px 12px; border-radius: 6px; font-family: 'Inter', sans-serif; font-size: 13.5px;
+  }
+  .field input:focus, .field select:focus { outline: 2px solid var(--violet); outline-offset: 1px; }
+  .time-pair { display: flex; gap: 8px; }
+  .time-pair input { width: 100%; }
+  .submit-row { grid-column: 1 / -1; display: flex; justify-content: flex-end; gap: 12px; margin-top: 4px; }
+  button.primary {
+    background: var(--violet); color: #0f0a24; border: none; font-weight: 600; font-size: 14px;
+    padding: 12px 26px; border-radius: 8px; cursor: pointer; font-family: 'Inter', sans-serif;
+  }
+  button.primary:hover { background: #9c81ff; }
+  button.primary:disabled { opacity: 0.5; cursor: not-allowed; }
+  #predict-result { margin-top: 28px; }
+  .result-hero {
+    background: linear-gradient(135deg, rgba(138,107,255,0.14), rgba(46,230,166,0.05));
+    border: 1px solid var(--violet-dim); border-radius: var(--radius); padding: 26px 30px;
+    display: flex; align-items: baseline; gap: 18px;
+  }
+  .result-hero .big { font-family: 'JetBrains Mono', monospace; font-size: 44px; font-weight: 600; color: var(--violet); }
+  .result-hero .label { color: var(--muted); font-size: 13px; }
+  .error-box {
+    border: 1px solid var(--red); background: rgba(255,92,92,0.08); color: var(--red);
+    padding: 14px 16px; border-radius: 8px; font-size: 13px; margin-top: 16px;
+  }
+  footer { text-align: center; color: var(--muted); font-size: 12px; padding: 30px; border-top: 1px solid var(--line); }
+</style>
+</head>
+<body>
+
+<header>
+  <div class="brand">
+    <div class="brand-mark">DL</div>
+    <div>
+      <h1>Delivery Time Predictor</h1>
+      <p>Keras neural network, trained live from your notebook</p>
+    </div>
+  </div>
+  <div id="status-badge"><span class="dot loading" id="status-dot"></span><span id="status-text">connecting to backend…</span></div>
+</header>
+
+<nav>
+  <button class="tab-btn active" data-view="overview">Data Overview</button>
+  <button class="tab-btn" data-view="model">Model &amp; Training</button>
+  <button class="tab-btn" data-view="predict">Try a Prediction</button>
+</nav>
+
+<main>
+
+  <!-- OVERVIEW -->
+  <section id="view-overview" class="view active">
+    <h2 class="section-title">Exploratory Data Analysis</h2>
+    <p class="section-sub">Graphs generated live from train.csv by the backend — identical analysis to the notebook.</p>
+    <div id="eda-loading" class="loading-msg">Loading graphs…</div>
+    <div id="eda-grid" class="grid"></div>
+  </section>
+
+  <!-- MODEL -->
+  <section id="view-model" class="view">
+    <h2 class="section-title">Neural Network Performance</h2>
+    <p class="section-sub">Sequential ANN — Dense(128) → Dense(64) → Dense(32) → Dense(1), Adam optimizer, MSE loss.</p>
+
+    <div class="card" style="margin-bottom:24px;">
+      <h3>Architecture</h3>
+      <div class="arch-diagram">
+        <div class="layer-box"><div class="n">18</div><div class="l">input features</div></div>
+        <div class="arch-arrow">→</div>
+        <div class="layer-box"><div class="n">128</div><div class="l">Dense · ReLU</div></div>
+        <div class="arch-arrow">→</div>
+        <div class="layer-box"><div class="n">64</div><div class="l">Dense · ReLU</div></div>
+        <div class="arch-arrow">→</div>
+        <div class="layer-box"><div class="n">32</div><div class="l">Dense · ReLU</div></div>
+        <div class="arch-arrow">→</div>
+        <div class="layer-box"><div class="n">1</div><div class="l">output (minutes)</div></div>
+      </div>
+    </div>
+
+    <div id="metrics-loading" class="loading-msg">Training network…</div>
+    <div id="metrics-row" class="metrics-row"></div>
+
+    <div class="grid">
+      <div id="loss-card" class="card"></div>
+      <div id="scatter-card" class="card"></div>
+    </div>
+    <div id="bar-card" class="card"></div>
+  </section>
+
+  <!-- PREDICT -->
+  <section id="view-predict" class="view">
+    <h2 class="section-title">Predict Delivery Time</h2>
+    <p class="section-sub">Fill in the order details — the trained neural network will estimate the time.</p>
+
+    <form class="predict-form" id="predict-form">
+      <div class="field"><label>Delivery person age</label><input type="number" name="Delivery_person_Age" value="28" min="18" max="60" required></div>
+      <div class="field"><label>Delivery person rating</label><input type="number" step="0.1" name="Delivery_person_Ratings" value="4.7" min="1" max="5" required></div>
+      <div class="field"><label>Restaurant latitude</label><input type="number" step="0.0001" name="Restaurant_latitude" value="12.9716" required></div>
+      <div class="field"><label>Restaurant longitude</label><input type="number" step="0.0001" name="Restaurant_longitude" value="77.5946" required></div>
+      <div class="field"><label>Delivery latitude</label><input type="number" step="0.0001" name="Delivery_location_latitude" value="12.9816" required></div>
+      <div class="field"><label>Delivery longitude</label><input type="number" step="0.0001" name="Delivery_location_longitude" value="77.6046" required></div>
+
+      <div class="field"><label>Weather conditions</label><select name="Weatherconditions"></select></div>
+      <div class="field"><label>Road traffic density</label><select name="Road_traffic_density"></select></div>
+      <div class="field"><label>Vehicle condition (0-3)</label><select name="Vehicle_condition"></select></div>
+      <div class="field"><label>Type of order</label><select name="Type_of_order"></select></div>
+      <div class="field"><label>Type of vehicle</label><select name="Type_of_vehicle"></select></div>
+      <div class="field"><label>Multiple deliveries (0-3)</label><select name="multiple_deliveries"></select></div>
+      <div class="field"><label>Festival day?</label><select name="Festival"></select></div>
+      <div class="field"><label>City type</label><select name="City"></select></div>
+
+      <div class="field"><label>Order day (1-31)</label><input type="number" name="Day" value="19" min="1" max="31" required></div>
+      <div class="field"><label>Order month (1-12)</label><input type="number" name="Month" value="3" min="1" max="12" required></div>
+
+      <div class="field">
+        <label>Order time (24h)</label>
+        <div class="time-pair">
+          <input type="number" name="Order_hour" value="11" min="0" max="23" placeholder="HH" required>
+          <input type="number" name="Order_minute" value="30" min="0" max="59" placeholder="MM" required>
+        </div>
+      </div>
+      <div class="field">
+        <label>Pickup time (24h)</label>
+        <div class="time-pair">
+          <input type="number" name="Pickup_hour" value="11" min="0" max="23" placeholder="HH" required>
+          <input type="number" name="Pickup_minute" value="45" min="0" max="59" placeholder="MM" required>
+        </div>
+      </div>
+
+      <div class="submit-row">
+        <button type="submit" class="primary" id="predict-btn">Predict delivery time</button>
+      </div>
+    </form>
+
+    <div id="predict-result"></div>
+  </section>
+
+</main>
+
+<footer>Backend: Flask + TensorFlow/Keras · Frontend: static HTML/JS · Run locally at http://localhost:5001</footer>
+
+<script>
+const API = 'http://localhost:5001';
+const statusDot = document.getElementById('status-dot');
+const statusText = document.getElementById('status-text');
+
+document.querySelectorAll('.tab-btn').forEach(btn => {
+  btn.addEventListener('click', () => {
+    document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+    document.querySelectorAll('.view').forEach(v => v.classList.remove('active'));
+    btn.classList.add('active');
+    document.getElementById('view-' + btn.dataset.view).classList.add('active');
+  });
+});
+
+const GRAPH_LABELS = {
+  heatmap: 'Correlation Heatmap',
+  histograms: 'Feature Distributions',
+  boxplots: 'Outlier Check (Boxplots)',
+  scatter_age_time: 'Age vs Delivery Time',
+  countplot_city: 'Orders by City Type',
+};
+
+async function pollStatus() {
+  try {
+    const res = await fetch(`${API}/api/status`);
+    const data = await res.json();
+    if (data.ready) {
+      statusDot.className = 'dot ready';
+      statusText.textContent = `ready · R² ${(data.metrics.r2*100).toFixed(1)}%`;
+      loadEverything();
+    } else {
+      setTimeout(pollStatus, 2000);
+    }
+  } catch (e) {
+    statusText.textContent = 'waiting for backend at :5001…';
+    setTimeout(pollStatus, 2000);
+  }
+}
+
+async function loadEverything() {
+  loadEda();
+  loadModelInfo();
+  loadOptions();
+}
+
+async function loadEda() {
+  const res = await fetch(`${API}/api/eda-graphs`);
+  const graphs = await res.json();
+  document.getElementById('eda-loading').style.display = 'none';
+  const grid = document.getElementById('eda-grid');
+  grid.innerHTML = '';
+  Object.entries(graphs).forEach(([key, src]) => {
+    const card = document.createElement('div');
+    card.className = 'card';
+    card.innerHTML = `<h3>${GRAPH_LABELS[key] || key}</h3><img src="${src}" alt="${key}">`;
+    grid.appendChild(card);
+  });
+}
+
+async function loadModelInfo() {
+  const [metricsRes, graphsRes] = await Promise.all([
+    fetch(`${API}/api/metrics`), fetch(`${API}/api/model-graphs`)
+  ]);
+  const m = await metricsRes.json();
+  const graphs = await graphsRes.json();
+
+  document.getElementById('metrics-loading').style.display = 'none';
+  const row = document.getElementById('metrics-row');
+  row.innerHTML = `
+    <div class="metric-card"><div class="name">R² Score</div><div class="val mono">${(m.r2*100).toFixed(1)}%</div></div>
+    <div class="metric-card"><div class="name">MAE</div><div class="val mono">${m.mae}</div></div>
+    <div class="metric-card"><div class="name">RMSE</div><div class="val mono">${m.rmse}</div></div>
+    <div class="metric-card"><div class="name">Epochs run</div><div class="val mono">${m.epochs_run}</div></div>
+  `;
+
+  document.getElementById('loss-card').innerHTML =
+    `<h3>Training History (loss curve)</h3><img src="${graphs.loss_curve}">`;
+  document.getElementById('scatter-card').innerHTML =
+    `<h3>Actual vs Predicted (scatter)</h3><img src="${graphs.scatter_actual_vs_predicted}">`;
+  document.getElementById('bar-card').innerHTML =
+    `<h3>Actual vs Predicted — first 20 test samples</h3><img src="${graphs.bar_actual_vs_predicted}">`;
+}
+
+async function loadOptions() {
+  const res = await fetch(`${API}/api/options`);
+  const opts = await res.json();
+  const form = document.getElementById('predict-form');
+  Object.entries(opts.categorical).forEach(([field, values]) => {
+    const select = form.querySelector(`select[name="${field}"]`);
+    select.innerHTML = values.map(v => `<option value="${v}">${v}</option>`).join('');
+  });
+  const vc = form.querySelector('select[name="Vehicle_condition"]');
+  vc.innerHTML = opts.vehicle_condition_range.map(v => `<option value="${v}">${v}</option>`).join('');
+  const md = form.querySelector('select[name="multiple_deliveries"]');
+  md.innerHTML = opts.multiple_deliveries_range.map(v => `<option value="${v}">${v}</option>`).join('');
+}
+
+document.getElementById('predict-form').addEventListener('submit', async (e) => {
+  e.preventDefault();
+  const btn = document.getElementById('predict-btn');
+  btn.disabled = true; btn.textContent = 'Predicting…';
+
+  const fd = new FormData(e.target);
+  const payload = {};
+  fd.forEach((v, k) => payload[k] = v);
+
+  const resultDiv = document.getElementById('predict-result');
+  try {
+    const res = await fetch(`${API}/api/predict`, {
+      method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(payload)
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error || 'Prediction failed');
+
+    resultDiv.innerHTML = `
+      <div class="result-hero">
+        <div class="big mono">${data.prediction} min</div>
+        <div class="label">estimated delivery time<br>(neural network prediction)</div>
+      </div>
+    `;
+  } catch (err) {
+    resultDiv.innerHTML = `<div class="error-box">${err.message}</div>`;
+  } finally {
+    btn.disabled = false; btn.textContent = 'Predict delivery time';
+  }
+});
+
+pollStatus();
+</script>
+
+</body>
+</html>

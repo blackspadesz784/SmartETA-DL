@@ -1,0 +1,10 @@
+services:
+  - type: web
+    name: smarteta-dl
+    env: python
+    region: oregon
+    buildCommand: pip install -r backend/requirements.txt
+    startCommand: gunicorn backend.app:app
+    envVars:
+      - key: PYTHON_VERSION
+        value: 3.11.9

@@ -236,10 +236,13 @@
 
 </main>
 
-<footer>Backend: Flask + TensorFlow/Keras · Frontend: static HTML/JS · Run locally at http://localhost:5001</footer>
+<footer>Backend: Flask + TensorFlow/Keras · Frontend: static HTML/JS</footer>
 
 <script>
-const API = 'http://localhost:5001';
+const RENDER_BACKEND = 'https://smarteta-dl.onrender.com';
+const API = (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1')
+  ? (window.location.port === '5001' ? 'http://localhost:5001' : RENDER_BACKEND)
+  : RENDER_BACKEND;
 const statusDot = document.getElementById('status-dot');
 const statusText = document.getElementById('status-text');
 
@@ -272,7 +275,7 @@ async function pollStatus() {
       setTimeout(pollStatus, 2000);
     }
   } catch (e) {
-    statusText.textContent = 'waiting for backend at :5001…';
+    statusText.textContent = 'connecting to backend...';
     setTimeout(pollStatus, 2000);
   }
 }

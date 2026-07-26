@@ -32,7 +32,8 @@ from tensorflow.keras.callbacks import EarlyStopping
 
 warnings.filterwarnings("ignore")
 
-app = Flask(__name__, static_folder="../frontend", static_url_path="")
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+app = Flask(__name__, static_folder=os.path.abspath(os.path.join(BASE_DIR, "..")), static_url_path="")
 CORS(app)
 
 # ----------------------------------------------------------------------
@@ -162,7 +163,10 @@ def make_eda_graphs(df_numeric_view, city_series, age_series, time_series):
 
 
 def train_pipeline():
-    raw = pd.read_csv("train.csv")
+    csv_path = os.path.join(BASE_DIR, "train.csv")
+    if not os.path.exists(csv_path):
+        csv_path = "train.csv"
+    raw = pd.read_csv(csv_path)
     df = clean_dataframe(raw)
 
     eda_numeric_cols = [c for c in df.columns if pd.api.types.is_numeric_dtype(df[c])]
@@ -335,12 +339,20 @@ def predict():
     return jsonify({"prediction": round(pred, 1)})
 
 
+@app.route("/health")
+def health():
+    return jsonify({"status": "ok", "ready": bool(STATE)})
+
+
 @app.route("/")
 def index():
     return send_from_directory(app.static_folder, "index.html")
 
 
-if __name__ == "__main__":
-    print("Training the neural network on startup, this can take 1-3 minutes...")
+if not STATE:
+    print("Initializing neural network training pipeline on startup...")
     train_pipeline()
+
+
+if __name__ == "__main__":
     app.run(host="0.0.0.0", port=5001, debug=False)

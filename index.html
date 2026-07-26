@@ -263,20 +263,31 @@ const GRAPH_LABELS = {
   countplot_city: 'Orders by City Type',
 };
 
+let _pollAttempt = 0;
 async function pollStatus() {
+  _pollAttempt++;
   try {
-    const res = await fetch(`${API}/api/status`);
+    const res = await fetch(`${API}/api/status`, { mode: 'cors' });
+    _pollAttempt = 0;
     const data = await res.json();
     if (data.ready) {
       statusDot.className = 'dot ready';
-      statusText.textContent = `ready · R² ${(data.metrics.r2*100).toFixed(1)}%`;
+      statusText.textContent = `ready · R² ${(data.metrics.r2 * 100).toFixed(1)}%`;
       loadEverything();
     } else {
-      setTimeout(pollStatus, 2000);
+      statusDot.className = 'dot loading';
+      statusText.textContent = 'model training on server…';
+      setTimeout(pollStatus, 3000);
     }
   } catch (e) {
-    statusText.textContent = 'connecting to backend...';
-    setTimeout(pollStatus, 2000);
+    statusDot.className = 'dot loading';
+    if (_pollAttempt <= 3) {
+      statusText.textContent = 'waking up backend (free tier cold-start)…';
+    } else {
+      statusText.textContent = `still waking up… (attempt ${_pollAttempt})`;
+    }
+    // back off: 3 s for first 5 attempts, then 6 s
+    setTimeout(pollStatus, _pollAttempt <= 5 ? 3000 : 6000);
   }
 }
 
@@ -349,9 +360,25 @@ document.getElementById('predict-form').addEventListener('submit', async (e) => 
 
   const resultDiv = document.getElementById('predict-result');
   try {
-    const res = await fetch(`${API}/api/predict`, {
-      method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(payload)
-    });
+    let res;
+    try {
+      res = await fetch(`${API}/api/predict`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+        mode: 'cors',
+      });
+    } catch (networkErr) {
+      // Network error = backend asleep / CORS preflight rejected by proxy
+      resultDiv.innerHTML = `<div class="error-box">⚠️ Cannot reach backend — it may be waking up (Render free tier). <br>Please wait 30–60 seconds and try again.</div>`;
+      return;
+    }
+
+    if (res.status === 503) {
+      resultDiv.innerHTML = `<div class="error-box">⏳ Backend is still initialising the model. Please wait a few seconds and try again.</div>`;
+      return;
+    }
+
     const data = await res.json();
     if (!res.ok) throw new Error(data.error || 'Prediction failed');
 

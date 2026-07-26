@@ -1,4 +1,4 @@
-# Food Delivery Time Predictor — Deep Learning (Keras ANN) Web App
+# Food SmartETA — Deep Learning (Keras ANN) Web App
 
 This turns your `DL_Food_Delivery_Time_Prediction_Project.ipynb` notebook into
 a working web app: a Flask backend that runs the same data-cleaning →

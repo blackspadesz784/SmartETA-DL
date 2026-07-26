@@ -34,7 +34,19 @@ warnings.filterwarnings("ignore")
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 app = Flask(__name__, static_folder=os.path.abspath(os.path.join(BASE_DIR, "..")), static_url_path="")
-CORS(app)
+CORS(app, resources={r"/*": {"origins": "*"}})
+
+@app.after_request
+def add_cors_headers(response):
+    response.headers["Access-Control-Allow-Origin"] = "*"
+    response.headers["Access-Control-Allow-Headers"] = "Content-Type, Authorization, X-Requested-With"
+    response.headers["Access-Control-Allow-Methods"] = "GET, POST, OPTIONS, PUT, DELETE"
+    return response
+
+@app.errorhandler(Exception)
+def handle_exception(e):
+    return jsonify({"error": str(e)}), 500
+
 
 # ----------------------------------------------------------------------
 # Feature order — same pipeline/order as the notebook produces.
@@ -283,32 +295,41 @@ def status():
 
 @app.route("/api/eda-graphs")
 def eda_graphs():
-    return jsonify(STATE["eda_graphs"])
+    return jsonify(STATE.get("eda_graphs", {}))
 
 
 @app.route("/api/model-graphs")
 def model_graphs():
-    return jsonify(STATE["model_graphs"])
+    return jsonify(STATE.get("model_graphs", {}))
 
 
 @app.route("/api/metrics")
 def metrics():
-    return jsonify(STATE["metrics"])
+    return jsonify(STATE.get("metrics", {}))
 
 
 @app.route("/api/options")
 def options():
     return jsonify({
-        "categorical": STATE["categorical_options"],
+        "categorical": STATE.get("categorical_options", {}),
         "vehicle_condition_range": [0, 1, 2, 3],
         "multiple_deliveries_range": [0, 1, 2, 3],
     })
 
 
-@app.route("/api/predict", methods=["POST"])
+@app.route("/api/predict", methods=["POST", "OPTIONS"])
 def predict():
-    data = request.get_json(force=True)
+    if request.method == "OPTIONS":
+        return "", 200
+
+    if not STATE or "encoders" not in STATE or "model" not in STATE:
+        return jsonify({"error": "Model training/initialization in progress. Please retry in a few seconds."}), 503
+
     try:
+        data = request.get_json(force=True)
+        if not data:
+            return jsonify({"error": "No payload provided"}), 400
+
         row = {
             "Delivery_person_Age": float(data["Delivery_person_Age"]),
             "Delivery_person_Ratings": float(data["Delivery_person_Ratings"]),
@@ -329,14 +350,19 @@ def predict():
             "Order_Time": int(data["Order_hour"]) * 60 + int(data["Order_minute"]),
             "Pickup_Time": int(data["Pickup_hour"]) * 60 + int(data["Pickup_minute"]),
         }
-    except (KeyError, ValueError) as e:
-        return jsonify({"error": f"Invalid input: {e}"}), 400
+    except (KeyError, ValueError, TypeError) as e:
+        return jsonify({"error": f"Invalid input field: {e}"}), 400
+    except Exception as e:
+        return jsonify({"error": f"Error parsing input data: {str(e)}"}), 400
 
-    X_input = pd.DataFrame([row])[FEATURE_ORDER]
-    X_scaled = STATE["scaler"].transform(X_input)
-    pred = float(STATE["model"].predict(X_scaled, verbose=0).flatten()[0])
+    try:
+        X_input = pd.DataFrame([row])[FEATURE_ORDER]
+        X_scaled = STATE["scaler"].transform(X_input)
+        pred = float(STATE["model"].predict(X_scaled, verbose=0).flatten()[0])
+        return jsonify({"prediction": round(pred, 1)})
+    except Exception as e:
+        return jsonify({"error": f"Prediction computation failed: {str(e)}"}), 500
 
-    return jsonify({"prediction": round(pred, 1)})
 
 
 @app.route("/health")

@@ -9,6 +9,8 @@ import os
 import io
 import base64
 import warnings
+import threading
+import pickle
 
 os.environ["TF_CPP_MIN_LOG_LEVEL"] = "3"  # quiet TensorFlow startup logs
 
@@ -26,7 +28,7 @@ from sklearn.model_selection import train_test_split
 from sklearn.preprocessing import LabelEncoder, StandardScaler
 from sklearn.metrics import mean_absolute_error, mean_squared_error, r2_score
 
-from tensorflow.keras.models import Sequential
+from tensorflow.keras.models import Sequential, load_model
 from tensorflow.keras.layers import Dense
 from tensorflow.keras.callbacks import EarlyStopping
 
@@ -84,6 +86,14 @@ CATEGORICAL_COLS = [
 EPOCHS = 120        # notebook used 200; capped + EarlyStopping for a
 BATCH_SIZE = 32      # reasonable startup time in a demo web app
 STATE = {}
+_TRAINING_LOCK = threading.Lock()
+
+# Paths for persisting trained artefacts across warm restarts
+CACHE_DIR = os.path.join(BASE_DIR, "model_cache")
+MODEL_PATH = os.path.join(CACHE_DIR, "model.keras")
+SCALER_PATH = os.path.join(CACHE_DIR, "scaler.pkl")
+ENCODERS_PATH = os.path.join(CACHE_DIR, "encoders.pkl")
+METADATA_PATH = os.path.join(CACHE_DIR, "metadata.pkl")
 
 
 def fig_to_base64(fig):
@@ -172,6 +182,51 @@ def make_eda_graphs(df_numeric_view, city_series, age_series, time_series):
     graphs["countplot_city"] = fig_to_base64(fig)
 
     return graphs
+
+
+def _load_cache():
+    """Try to restore a previously saved model from disk. Returns True on success."""
+    if not all(os.path.exists(p) for p in [MODEL_PATH, SCALER_PATH, ENCODERS_PATH, METADATA_PATH]):
+        return False
+    try:
+        print("Loading cached model from disk…")
+        with open(SCALER_PATH, "rb") as f:
+            scaler = pickle.load(f)
+        with open(ENCODERS_PATH, "rb") as f:
+            encoders = pickle.load(f)
+        with open(METADATA_PATH, "rb") as f:
+            metadata = pickle.load(f)
+        model = load_model(MODEL_PATH)
+        STATE["encoders"] = encoders
+        STATE["scaler"] = scaler
+        STATE["model"] = model
+        STATE["metrics"] = metadata["metrics"]
+        STATE["eda_graphs"] = metadata["eda_graphs"]
+        STATE["model_graphs"] = metadata["model_graphs"]
+        STATE["categorical_options"] = metadata["categorical_options"]
+        print("Cache loaded successfully.", STATE["metrics"])
+        return True
+    except Exception as exc:
+        print(f"Cache load failed ({exc}), will retrain.")
+        return False
+
+
+def _save_cache(encoders, scaler, model, metrics, eda_graphs, model_graphs, categorical_options):
+    """Persist model artefacts to disk for future warm restarts."""
+    os.makedirs(CACHE_DIR, exist_ok=True)
+    model.save(MODEL_PATH)
+    with open(SCALER_PATH, "wb") as f:
+        pickle.dump(scaler, f)
+    with open(ENCODERS_PATH, "wb") as f:
+        pickle.dump(encoders, f)
+    with open(METADATA_PATH, "wb") as f:
+        pickle.dump({
+            "metrics": metrics,
+            "eda_graphs": eda_graphs,
+            "model_graphs": model_graphs,
+            "categorical_options": categorical_options,
+        }, f)
+    print("Model artefacts cached to disk.")
 
 
 def train_pipeline():
@@ -268,20 +323,23 @@ def train_pipeline():
     plt.legend()
     model_graphs["bar_actual_vs_predicted"] = fig_to_base64(fig)
 
-    STATE["encoders"] = encoders
-    STATE["scaler"] = scaler
-    STATE["model"] = model
-    STATE["metrics"] = {
+    metrics = {
         "mae": round(mae, 3), "mse": round(mse, 3),
         "rmse": round(rmse, 3), "r2": round(r2, 4),
         "epochs_run": len(history.history["loss"]),
     }
-    STATE["eda_graphs"] = eda_graphs
-    STATE["model_graphs"] = model_graphs
-    STATE["categorical_options"] = {
+    categorical_options = {
         col: sorted(encoders[col].classes_.tolist()) for col in CATEGORICAL_COLS
     }
+    STATE["encoders"] = encoders
+    STATE["scaler"] = scaler
+    STATE["model"] = model
+    STATE["metrics"] = metrics
+    STATE["eda_graphs"] = eda_graphs
+    STATE["model_graphs"] = model_graphs
+    STATE["categorical_options"] = categorical_options
     print("Training complete.", STATE["metrics"])
+    _save_cache(encoders, scaler, model, metrics, eda_graphs, model_graphs, categorical_options)
 
 
 # ----------------------------------------------------------------------
@@ -375,9 +433,19 @@ def index():
     return send_from_directory(app.static_folder, "index.html")
 
 
-if not STATE:
-    print("Initializing neural network training pipeline on startup...")
-    train_pipeline()
+def _startup():
+    """Run in a background thread so Gunicorn workers stay responsive during training."""
+    with _TRAINING_LOCK:
+        if STATE:  # already populated (e.g. by another worker)
+            return
+        if _load_cache():
+            return
+        print("No cache found — training ANN from scratch (this may take a few minutes)…")
+        train_pipeline()
+
+# Launch training in the background so the web server is immediately ready
+_t = threading.Thread(target=_startup, daemon=True)
+_t.start()
 
 
 if __name__ == "__main__":
